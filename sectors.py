@@ -1,6 +1,13 @@
 import os
 import gostcrypto
 import json
+import tkinter as tk
+from tkinter import ttk
+
+
+def create_key(byte_string):
+    """Создание ключа для кузнечика"""
+    return gostcrypto.gosthash.new('streebog256', data=byte_string).digest()
 
 
 class Sector:
@@ -22,7 +29,6 @@ class Sector:
         with open(self.file_path, 'rb') as file:
             file.seek(self.first_byte_address, os.SEEK_SET)
             data = file.read(self.sector_size)
-
             cipher_obj = gostcrypto.gostcipher.new('kuznechik',
                                                    self.key,
                                                    gostcrypto.gostcipher.MODE_CBC,
@@ -56,6 +62,44 @@ def json_decode(json_bytes: bytes) -> dict:
     return json.loads(json_bytes)
 
 
+def list_compress(data_list: list) -> list:
+    """Сжимаем список секторов: [1, 2, 3, 4] -> [(1,4)]"""
+    if len(data_list) > 0:
+        data_list.sort()
+        first_num = data_list[0]    # Первый номер
+        cont_num = first_num        # Продолжающийся номер
+        new_data = []               # Результат сжатия
+        for i in data_list[1:]:     # Проходимся по всему списку
+            if i - cont_num == 1:   # Если элемент - продолжение предыдущего, то продолжаем
+                cont_num += 1
+            else:                   # Иначе записываем в новый список
+                if first_num == cont_num:       # Если это одиночный элемент, то пишем только его
+                    new_data.append(first_num)
+                else:                           # Если это диапазон, то пишем в tuple
+                    new_data.append([first_num, cont_num])
+                first_num = i       # И начинаем снова
+                cont_num = first_num
+        if first_num == cont_num:   # Не забываем записать последний проход
+            new_data.append(first_num)
+        else:
+            new_data.append((first_num, cont_num))
+    else:
+        new_data = []
+    return new_data
+
+
+def list_decompress(data_list: list) -> list:
+    """Разворачиваем список"""
+    new_data = []
+    for i in data_list:
+        if type(i) is list:
+            new_data += [j for j in range(i[0], i[1] + 1)]
+        else:
+            new_data.append(i)
+    new_data.sort()
+    return new_data
+
+
 class FirstSector:
     """Класс первого сектора, предназначен для работы с заголовками"""
     def __init__(self, key, file_path, sector_size=4096):
@@ -68,6 +112,7 @@ class FirstSector:
         """Создание нового сектора заголовков"""
         # Хэш для проверки корректности введенного ключа
         data = self.head_key
+        data += int.to_bytes(self.sector_size, 2, 'little')
 
         # Секторы заголовка
         sectors_tot = {
@@ -94,27 +139,17 @@ class FirstSector:
         Sector(0, self.file_path, self.key, self.sector_size).write_sector(data)
 
     def read_sector(self) -> tuple:
-        """Полная информация заголовков"""
-        data = Sector(0, self.file_path, self.key, self.sector_size).read_sector()  # Собсна чтение сектора
-        head_key = data[:64]    # Получение строки подтверждения ключа
-
-        len_stot = int.from_bytes(data[64:68], 'little')    # Длина таблицы секторов дерева деревьев
-        sectors_tot = json_decode(data[68: 68 + len_stot])  # таблица секторов дерева деревьев
-
-        sectors = sectors_tot['tree_of_trees_sectors']      # Собсна сами сектора
-        data = b''                                          # И чтение данных заново для получения полной таблицы дд
-        for i in sectors:
-            data += Sector(i, self.file_path, self.key, self.sector_size).read_sector()
-
-        len_tot = int.from_bytes(data[68 + len_stot:68 + len_stot + 4], 'little')           # Длина дерева деревьев
-        tree_of_trees = json_decode(data[68 + len_stot + 4: 68 + len_stot + 4 + len_tot])   # Само дерево деревьев
-        return head_key, sectors_tot, tree_of_trees
+        """Информация для точности расшифровки"""
+        data = Sector(0, self.file_path, self.key, 4096).read_sector()  # Чтение сектора
+        head_key = data[:64]            # Получение строки подтверждения ключа
+        self.sector_size = int.from_bytes(data[64:66], 'little')  # Получение размера сектора
+        return head_key, self.sector_size
 
     def read_sectors_tot(self) -> dict:
         """Чтение таблицы с секторами, в которых располагается дерево деревьев"""
         data = Sector(0, self.file_path, self.key, self.sector_size).read_sector()
-        len_stot = int.from_bytes(data[64:68], 'little')
-        return json_decode(data[68: 68 + len_stot])
+        len_stot = int.from_bytes(data[66:70], 'little')
+        return json_decode(data[70: 70 + len_stot])
 
     def read_tot(self) -> dict:
         """Чтение дерева деревьев с соответствующих секторов"""
@@ -124,14 +159,15 @@ class FirstSector:
             data += Sector(i, self.file_path, self.key, self.sector_size).read_sector()
 
         # И преобразуем в таблицу
-        len_stot = int.from_bytes(data[64:68], 'little')
-        len_tot = int.from_bytes(data[68 + len_stot:68 + len_stot + 4], 'little')
-        return json_decode(data[68 + len_stot + 4: 68 + len_stot + 4 + len_tot])
+        len_stot = int.from_bytes(data[66:70], 'little')
+        len_tot = int.from_bytes(data[70 + len_stot:70 + len_stot + 4], 'little')
+        return json_decode(data[70 + len_stot + 4: 70 + len_stot + 4 + len_tot])
 
     def update_sectors_tot(self, new_sections_tot: dict) -> None:
         """Изменение записанной таблицы секторов дерева деревьев"""
         tree_of_trees = self.read_tot()     # Читаем уже записанное дерево деревьев, чтобы перезаписать на новое место
         data = self.head_key
+        data += int.to_bytes(self.sector_size, 2, 'little')
 
         dict_stot = json_encode(new_sections_tot)
         len_stot = len(dict_stot)
@@ -151,6 +187,7 @@ class FirstSector:
         """Обновление дерева деревьев"""
         sectors_tot = self.read_sectors_tot()
         data = self.head_key
+        data += int.to_bytes(self.sector_size, 2, 'little')
 
         dict_stot = json_encode(sectors_tot)
         len_stot = len(dict_stot)
@@ -161,14 +198,14 @@ class FirstSector:
         data += int.to_bytes(len_tot, 4, 'little') + dict_tot
 
         # Если текущий размер заголовков превышает размер сектор, то создается новый с занесением в таблицу
-        if len(data) > len(sectors_tot) * self.sector_size:
+        if len(data) > (len(sectors_tot) * self.sector_size):
             sectors_tot['tree_of_trees_sectors'].append(os.path.getsize(self.file_path)//self.sector_size)
             self.update_sectors_tot(sectors_tot)            # Запоминаем новый сектор
             self.update_tree_of_trees(new_tree_of_trees)    # Запускаем функцию заново
         else:
             # Иначе просто записываем в сектора данные
             for i in range(len(sectors_tot['tree_of_trees_sectors'])):
-                Sector(sectors_tot[i], self.file_path, self.key, self.sector_size).write_sector(
+                Sector(sectors_tot['tree_of_trees_sectors'][i], self.file_path, self.key, self.sector_size).write_sector(
                     data[i * self.sector_size: (i + 1) * self.sector_size]
                 )
 
@@ -220,7 +257,7 @@ class TableSector:
         len_table = len(dict_table)
         data = int.to_bytes(len_table, 4, 'little') + dict_table
 
-        if len(data) > len(sectors) * self.sector_size:
+        if len(data) > (len(sectors) * self.sector_size):
             sector_0 = FirstSector(self.key, self.file_path, self.sector_size)  # Объект нулевого сектора
 
             tree_of_trees = sector_0.read_tot()             # Читаем таблицу распределения секторов
@@ -228,13 +265,13 @@ class TableSector:
             tree_of_trees[self.sectors_name].append(os.path.getsize(self.file_path)//self.sector_size)
 
             sector_0.update_tree_of_trees(tree_of_trees)    # И записываем обновленную таблицу секторов
-            sectors = tree_of_trees[self.sectors_name]      # Обновляем уже имеющуюся информацию по секторам
-
-        # Запись по секторам
-        for i in range(len(sectors)):
-            Sector(sectors[i], self.file_path, self.key, self.sector_size).write_sector(
-                data[i * self.sector_size: (i + 1) * self.sector_size]
-            )
+            self.update_table(new_table)
+        else:
+            # Запись по секторам
+            for i in range(len(sectors)):
+                Sector(sectors[i], self.file_path, self.key, self.sector_size).write_sector(
+                    data[i * self.sector_size: (i + 1) * self.sector_size]
+                )
 
     def read_table(self) -> dict:
         """Чтение таблицы"""
@@ -255,10 +292,12 @@ class FileSector:
         self.file_path = file_path
         self.sector_size = sector_size
 
-    def write_file(self, new_file_path, parent_id) -> None:
-        """Получаем название файла и заносим его в ФС"""
+    def write_file(self, new_file_path: str, progressbar: ttk.Progressbar, frame: tk.Frame) -> tuple[int, str]:
+        """Получаем название файла и заносим его в ФС, возвращает id файла"""
         with open(new_file_path, 'rb') as file:     # Читаем файл
             file_data = file.read()
+
+        # TODO: Переделать под многопоточную запись файла в ФС
 
         # Превращаем в данные для ФС
         len_file = len(file_data)
@@ -267,11 +306,9 @@ class FileSector:
         # Открываем сразу все заголовки
         free_table_sectors = TableSector(self.key, self.file_path, 'free', self.sector_size)
         file_table_sectors = TableSector(self.key, self.file_path, 'file', self.sector_size)
-        tree_table_sectors = TableSector(self.key, self.file_path, 'tree', self.sector_size)
 
-        free_sectors = free_table_sectors.read_table()['free']
+        free_sectors = list_decompress(free_table_sectors.read_table()['free'])
         file_dict = file_table_sectors.read_table()
-        tree_dict = tree_table_sectors.read_table()
 
         # Если этой первый файл, то нужно его записать со всеми почестями!
         if len(file_dict) > 0:
@@ -286,6 +323,10 @@ class FileSector:
 
         # Определение того, какие сектора займет файл в базе
         num_sectors = (len(data) + self.sector_size - 1) // self.sector_size    # Сколько секторов нужно файлу
+
+        progressbar['maximum'] = float(num_sectors)
+        frame.update()
+
         if len(free_sectors) >= num_sectors:    # Если свободных секторов больше чем требуемых, то просто пишем в них
             sectors = free_sectors[:num_sectors]
             free_sectors = free_sectors[num_sectors:]
@@ -301,38 +342,58 @@ class FileSector:
                 data[i * self.sector_size: (i + 1) * self.sector_size]
             )
 
-        # Обновление всех заголовков
-        file_dict[file_id] = [sectors, file_name]   # Заносим в таблицу файлов сектора и изначальное имя файла
-        file_table_sectors.update_table(file_dict)
+            if i % 5 == 0:
+                progressbar['value'] = float(i)
+                frame.update()
 
-        tree_id = str(int(list(tree_dict.keys())[-1]) + 1)
-        tree_dict[tree_id] = [int(parent_id), [], file_name, 1, file_id, tree_dict[str(parent_id)][5] + 1]
-        tree_table_sectors.update_table(tree_dict)
+        progressbar['value'] = float(num_sectors)
+        frame.update()
 
-        free_table_sectors.update_table({'free': free_sectors})
+        # Заносим в таблицу файлов сектора и изначальное имя файла
+        file_dict[file_id] = [file_name, list_compress(sectors)]
+        file_table_sectors.update_table(file_dict)  # Обновляем таблицу
 
-    def read_file(self, file_id) -> None:
+        free_table_sectors.update_table({'free': list_compress(free_sectors)})
+        return int(file_id), file_name
+
+    def read_file(self, file_id, progressbar: ttk.Progressbar, frame: ttk.Frame) -> None:
         """Чтение и запуск файла"""
         file_table = TableSector(self.key, self.file_path, 'file', self.sector_size).read_table()[str(file_id)]
-        sectors = file_table[0]
-        file_name = file_table[1]
+        file_name, sectors = file_table
+        sectors = list_decompress(sectors)
 
-        data = b''
-        for i in sectors:
-            data += Sector(i, self.file_path, self.key, self.sector_size).read_sector()
+        # Расшифрованные для запуска файлы храним в аппдате
+        app_directory = os.path.expanduser("~") + '\\AppData\\Local\\RockLock'
 
-        file_len = int.from_bytes(data[:4], 'little')
-        file_data = data[4: 4 + file_len]
+        progressbar['maximum'] = float(len(sectors))
+        frame.update()
 
-        # Проверяем есть ли папка для файлов
-        if not os.path.exists('C:\\Program Files\\RockLock'):
-            os.mkdir('C:\\Program Files\\RockLock')     # Если нет, то создаем
+        if os.path.exists(f'{app_directory}\\{file_name}'):     # Если файл уже распакован, то просто
+            progressbar['value'] = float(100)
+            frame.update()
 
-        with open(f'C:\\Program Files\\RockLock\\{file_name}', 'wb') as f:
-            f.write(file_data)  # Пишем в эту папку расшифрованный файл
+            os.startfile(f'{app_directory}\\{file_name}')       # Запускаем
+        else:                                                   # Если нет, то распаковываем
+            data = b''
 
-        os.system(f'attrib +h "C:\\Program Files\\RockLock\\{file_name}"')  # Говорим файлу, что он скрытый
-        os.startfile(f'C:\\Program Files\\RockLock\\{file_name}')           # И запускаем
+            for i in range(len(sectors)):
+                data += Sector(sectors[i], self.file_path, self.key, self.sector_size).read_sector()
+
+                progressbar['value'] = float(i)
+                frame.update()
+
+            file_len = int.from_bytes(data[:4], 'little')
+            file_data = data[4: 4 + file_len]
+
+            # Проверяем есть ли папка для файлов
+            if not os.path.exists(app_directory):
+                os.mkdir(app_directory)     # Если нет, то создаем
+
+            with open(f'{app_directory}\\{file_name}', 'wb') as f:
+                f.write(file_data)  # Пишем в эту папку расшифрованный файл
+
+            os.system(f'attrib +h "{app_directory}\\{file_name}"')  # Говорим файлу, что он скрытый
+            os.startfile(f'{app_directory}\\{file_name}')           # И запускаем
 
     def delete_file(self, file_id) -> None:
         """Удаление файла из ФС"""
@@ -340,59 +401,44 @@ class FileSector:
         free_table_sectors = TableSector(self.key, self.file_path, 'free', self.sector_size)
         file_table_sectors = TableSector(self.key, self.file_path, 'file', self.sector_size)
 
-        free_sectors = free_table_sectors.read_table()['free']
+        free_sectors = list_decompress(free_table_sectors.read_table()['free'])
         file_dict = file_table_sectors.read_table()
 
         # Секторы, занимаемые файлом
-        sectors = file_dict[str(file_id)][0]
+        sectors = list_decompress(file_dict[str(file_id)][1])
 
-        # Удаляем ноду с файлом из таблицы файлов
-        del file_dict[str(file_id)]
+        del file_dict[str(file_id)]                 # Удаляем ноду с файлом из таблицы файлов
+        file_table_sectors.update_table(file_dict)  # И обновляем таблицу файлов в файле
 
         # Сразу записываем сектора файла как свободные
         free_sectors += sectors
-        free_table_sectors.update_table({'free': free_sectors})
-
-        # И зануляем их
-        for i in sectors:
-            Sector(i, self.file_path, self.key, self.sector_size).write_sector(b'')
+        free_table_sectors.update_table({'free': list_compress(free_sectors)})
+        # И не зануляем, т.к. это долго
 
 
 def main():
-    filename = 'purum.txt'
-    key = 'purum'.encode('utf-8')
-    key_h = gostcrypto.gosthash.new('streebog256', data=key).digest()
+    filename = r'C:\Users\NIMALIZ\Desktop\NewFileSystem.rlfs'
+    key = '1234'.encode('utf-8')
+    key_h = create_key(key)
 
-    tree = {
-        '0': [None, [1, 4, 8], 'Root', 0, 0, 0],
-        '1': [0, [2, 3], 'folder1', 0, 0, 1],
-        '2': [1, [], 'pic1.jpg', 1, 1, 2],
-        '3': [1, [], 'pic2.jpg', 1, 2, 2],
-        '4': [0, [5], 'folder2', 0, 0, 1],
-        '5': [4, [6], 'folder3', 0, 0, 2],
-        '6': [5, [7], 'folder4', 0, 0, 3],
-        '7': [6, [], 'pic3.jpg', 1, 3, 4],
-        '8': [0, [], 'folder4', 0, 0, 1]
-    }
-
-    sector_0 = FirstSector(key_h, filename)
-    sector_0.create_new()
+    sector_0 = FirstSector(key_h, filename, 1024)
     print(sector_0.read_sector())
+    _, sector_size = sector_0.read_sector()
 
-    Sector(1, filename, key_h).write_sector(b'hello')
-    print(Sector(1, filename, key_h).read_sector())
-    print(FirstSector(key_h, filename).read_sector())
+    file_table = TableSector(key_h, filename, 'file', sector_size).read_table()
+    for key in file_table:
+        print(key, file_table[key])
 
+    print('\n' * 2)
 
+    file_table = TableSector(key_h, filename, 'tree', sector_size).read_table()
+    for key in file_table:
+        print(key, file_table[key])
 
+    print('\n' * 2)
 
-
-
-
-
-
-
-
+    free_table = TableSector(key_h, filename, 'free', sector_size).read_table()
+    print(free_table)
 
 
 if __name__ == '__main__':
