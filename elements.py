@@ -2,7 +2,17 @@ from tkinter.messagebox import askyesno, showerror
 from tkinter import filedialog, font
 from PIL import Image, ImageTk
 import copy
+import sys
 from sectors import *
+
+def resource_path(relative_path):
+    """Для корректного отображения картинок в режиме --one-file"""
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 
 class VisualElements:
@@ -24,15 +34,15 @@ class VisualElements:
         self.root.geometry("800x600+560+240")
         self.root.resizable(False, False)
         self.root.option_add("*tearOff", tk.FALSE)  # Чтоб не было пунктира в пунктах меню
-        self.root.iconbitmap(default='RockLock.ico')
+        self.root.iconbitmap(default=resource_path('RockLock.ico'))
 
         # Картинки файла и папки разных размеров
         mini_ico_size = 14
         self.maxi_ico_size = 80
-        self.image_folder_mini = ImageTk.PhotoImage(Image.open('folder_ico.png').resize((mini_ico_size, mini_ico_size)))
-        self.image_folder_maxi = ImageTk.PhotoImage(Image.open('folder_ico.png').resize((self.maxi_ico_size, self.maxi_ico_size)))
-        self.image_file_mini = ImageTk.PhotoImage(Image.open('file_ico.png').resize((mini_ico_size, mini_ico_size)))
-        self.image_file_maxi = ImageTk.PhotoImage(Image.open('file_ico.png').resize((self.maxi_ico_size, self.maxi_ico_size)))
+        self.image_folder_mini = ImageTk.PhotoImage(Image.open(resource_path('folder_ico.png')).resize((mini_ico_size, mini_ico_size)))
+        self.image_folder_maxi = ImageTk.PhotoImage(Image.open(resource_path('folder_ico.png')).resize((self.maxi_ico_size, self.maxi_ico_size)))
+        self.image_file_mini = ImageTk.PhotoImage(Image.open(resource_path('file_ico.png')).resize((mini_ico_size, mini_ico_size)))
+        self.image_file_maxi = ImageTk.PhotoImage(Image.open(resource_path('file_ico.png')).resize((self.maxi_ico_size, self.maxi_ico_size)))
 
         # Главное меню
         main_menu = tk.Menu()
