@@ -5,6 +5,7 @@ import copy
 import sys
 from sectors import *
 
+
 def resource_path(relative_path):
     """Для корректного отображения картинок в режиме --one-file"""
     try:
@@ -489,6 +490,8 @@ class VisualElements:
             menu.add_command(label='Удалить', command=lambda: self.node_remove(event, node_id))
             menu.add_command(label='Переименовать', command=lambda: self.node_rename(event, node_id))
             menu.add_command(label='Переместить', command=lambda: self.node_move(event, node_id))
+            menu.add_separator()
+            menu.add_command(label='Выгрузить', command=lambda: self.node_unload(event, node_id))
             menu.post(event.x_root, event.y_root)   # Открыть меню по месту нажатия
 
         for i in range(len(child_nodes)):
@@ -533,7 +536,7 @@ class VisualElements:
             progressbar = ttk.Progressbar(self.status_frame, orient=tk.HORIZONTAL, length=400)
             progressbar.pack(padx=10, pady=10, anchor=tk.E)
             FileSector(self.key, self.file_path, self.sector_size
-                       ).read_file(self.tree_dict[node_id][4], progressbar, self.status_frame)
+                       ).exec_file(self.tree_dict[node_id][4], progressbar, self.status_frame)
             progressbar.destroy()
 
     def node_rename(self, event, node_id):
@@ -729,7 +732,7 @@ class VisualElements:
             directory_path = directory_path.replace('/', '\\')
             dir_root = directory_path[:directory_path.rfind('\\')]
 
-            # Создаем целых два програссбара, один для отдельных файлов, другой для всей папки
+            # Создаем целых два прогрессбара, один для отдельных файлов, другой для всей папки
             progressbar = ttk.Progressbar(self.status_frame, orient=tk.HORIZONTAL, length=350)
             progressbar.grid(row=0, column=1, padx=10, pady=10, sticky=tk.E)
 
@@ -788,6 +791,45 @@ class VisualElements:
             self.status_frame.update()
 
             self.visual_reload(parent_id)
+
+            progressbar.destroy()
+            progressbar_total.destroy()
+
+    def node_unload(self, event, node_id):
+        """Выгрузка файла или папки из ФС в ФС ОС"""
+        def rec_nod_bypass(path, child_id):
+            if self.tree_dict[child_id][3] == 0:            # Если элемент - папка
+                node_name = self.tree_dict[child_id][2]     # Имя папки (по-хорошему добавить проверку, но лень)
+                os.mkdir(path + '\\' + node_name)           # Создаем нужную папку
+
+                for child_node in self.tree_dict[child_id][1]:  # Если есть дочерние элементы, то обходим и их
+                    child_node = str(child_node)
+                    rec_nod_bypass(path + '\\' + node_name, child_node)
+            else:                                           # Если элемент - файл
+                file_name, file_bytes = FileSector(         # То читаем файл
+                    self.key, self.file_path, self.sector_size
+                ).read_file(self.tree_dict[child_id][4], progressbar, self.status_frame)
+
+                with open(path + '\\' + file_name, 'wb') as f:      # И создаем его в папке
+                    f.write(file_bytes)
+            progressbar_total['value'] = progressbar['value'] + 1.0
+            self.status_frame.update()
+
+        node_id = str(node_id)
+        directory_path = filedialog.askdirectory(title='Выбор места выгрузки')      # Окно выбора
+        if directory_path != '':
+            # Создаем целых два прогрессбара, один для отдельных файлов, другой для всей папки
+            progressbar = ttk.Progressbar(self.status_frame, orient=tk.HORIZONTAL, length=350)
+            progressbar.grid(row=0, column=1, padx=10, pady=10, sticky=tk.E)
+
+            progressbar_total = ttk.Progressbar(self.status_frame, orient=tk.HORIZONTAL, length=350, maximum=100.0)
+            progressbar_total.grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
+
+            directory_path = directory_path.replace('/', '\\')
+
+            rec_nod_bypass(directory_path, node_id)     # Начинаем рекурсивную выгрузку папок и подпапок
+            progressbar_total['value'] = 100.0
+            self.status_frame.update()
 
             progressbar.destroy()
             progressbar_total.destroy()

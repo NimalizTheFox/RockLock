@@ -356,7 +356,27 @@ class FileSector:
         free_table_sectors.update_table({'free': list_compress(free_sectors)})
         return int(file_id), file_name
 
-    def read_file(self, file_id, progressbar: ttk.Progressbar, frame: ttk.Frame) -> None:
+    def read_file(self, file_id, progressbar: ttk.Progressbar, frame: ttk.Frame) -> tuple[str, bytes]:
+        """Простое чтение файла, возвращает имя файла и его байты"""
+        file_table = TableSector(self.key, self.file_path, 'file', self.sector_size).read_table()[str(file_id)]
+        file_name, sectors = file_table
+        sectors = list_decompress(sectors)
+
+        progressbar['maximum'] = float(len(sectors))
+        frame.update()
+
+        data = b''
+        for i in range(len(sectors)):
+            data += Sector(sectors[i], self.file_path, self.key, self.sector_size).read_sector()
+
+            progressbar['value'] = float(i)
+            frame.update()
+
+        file_len = int.from_bytes(data[:4], 'little')
+        file_data = data[4: 4 + file_len]
+        return file_name, file_data
+
+    def exec_file(self, file_id, progressbar: ttk.Progressbar, frame: ttk.Frame) -> None:
         """Чтение и запуск файла"""
         file_table = TableSector(self.key, self.file_path, 'file', self.sector_size).read_table()[str(file_id)]
         file_name, sectors = file_table
