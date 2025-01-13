@@ -26,8 +26,10 @@ class VisualElements:
         self.key = b''
         self.file_path = ''
         self.tree_dict = {}
-        self.sector_size = 4096
-        self.tree_sector = TableSector('', '', 'tree')
+        self.sector_size = 1024
+        self.tree_sector: TableSector = TableSector('', '', 'tree', 1024, '', '')
+        self.cipher = ''
+        self.cipher_method = ''
 
         # Собсна интерфейс
         self.root = tk.Tk()
@@ -67,7 +69,7 @@ class VisualElements:
         self.tree_frame.pack(side=tk.LEFT, anchor=tk.N, fill=tk.Y, pady=3, padx=2)
 
         self.tree = ttk.Treeview(master=self.tree_frame)
-        self.tree.heading("#0", text='RockLock Explorer', anchor=tk.NW)
+        self.tree.heading("#0", text='RockLock Проводник', anchor=tk.NW)
         self.tree.pack(expand=1, fill=tk.BOTH)
 
         # Фрейм для отображения папок и файлов, плюс настройка скроллбара (да, это сложно)
@@ -121,7 +123,7 @@ class VisualElements:
         """Создание новой ФС"""
         window = tk.Toplevel()
         window.title("Создание новой ФС")
-        window.geometry('600x400+660+340')  # Появление в центре экрана (для FHD экранов)
+        window.geometry('600x500+660+340')  # Появление в центре экрана (для FHD экранов)
         window.resizable(False, False)
         window.protocol("WM_DELETE_WINDOW", lambda: dismiss())  # перехватываем нажатие на крестик
 
@@ -157,18 +159,42 @@ class VisualElements:
         # Сам выбор файла
         ttk.Button(window, text='Обзор...', command=lambda: create_file()).grid(row=2, column=2, sticky=tk.EW, padx=15)
 
+        # Поле для размера сектора
         ttk.Label(window,
                   text='Выберите количество байт в одном секторе',
                   background='grey94'
                   ).grid(row=3, column=0, columnspan=2, sticky=tk.E, padx=pad_x, pady=pad_y)
 
-        # Поле для размера сектора
         sector_size_entry = ttk.Entry(window)
         sector_size_entry.insert(0, '1024')
         sector_size_entry.grid(row=3, column=2, sticky=tk.EW, padx=15)
 
+        # Выбор шифра
+        ttk.Label(window,
+                  text='Выберите шифр',
+                  background='grey94'
+                  ).grid(row=4, column=0, columnspan=2, sticky=tk.E, padx=pad_x, pady=pad_y)
+
+        cipher_combobox = ttk.Combobox(window,
+                                       values=['Кузнечик', 'Магма'],
+                                       state='readonly')
+        cipher_combobox.grid(row=4, column=2, sticky=tk.EW, padx=15)
+        cipher_combobox.current(0)
+
+        # Выбор метода шифрования
+        ttk.Label(window,
+                  text='Выберите метод шифрования',
+                  background='grey94'
+                  ).grid(row=5, column=0, columnspan=2, sticky=tk.E, padx=pad_x, pady=pad_y)
+
+        cipher_method_combobox = ttk.Combobox(window,
+                                       values=['ECB', 'CBC'],
+                                       state='readonly')
+        cipher_method_combobox.grid(row=5, column=2, sticky=tk.EW, padx=15)
+        cipher_method_combobox.current(1)
+
         # Ли-и-и-и-иния
-        ttk.Separator(window, orient=tk.HORIZONTAL).grid(row=4, column=0, columnspan=3, sticky=tk.EW, pady=12, padx=10)
+        ttk.Separator(window, orient=tk.HORIZONTAL).grid(row=6, column=0, columnspan=3, sticky=tk.EW, pady=12, padx=10)
 
         # Выбор метода шифрования (ключ и\или файл)
         key_value = tk.IntVar(window)
@@ -177,37 +203,37 @@ class VisualElements:
         ttk.Label(window,
                   text='Выберите метод создания ключа (можно выбрать оба)',
                   background='grey94'
-                  ).grid(row=5, column=0, columnspan=3, sticky=tk.EW, padx=pad_x, pady=pad_y)
+                  ).grid(row=7, column=0, columnspan=3, sticky=tk.EW, padx=pad_x, pady=pad_y)
 
         # Галочка для пароля
         check_key = ttk.Checkbutton(window, text='Пароль:', variable=key_value)
-        check_key.grid(row=6, column=0, sticky=tk.E, padx=pad_x, pady=pad_y)
+        check_key.grid(row=8, column=0, sticky=tk.E, padx=pad_x, pady=pad_y)
 
         # Поле для ввода пароля
         check_key_entry = ttk.Entry(window)
-        check_key_entry.grid(row=6, column=1, columnspan=2, sticky=tk.EW, padx=pad_x)
+        check_key_entry.grid(row=8, column=1, columnspan=2, sticky=tk.EW, padx=pad_x)
 
         # Галочка для контрольного файла
         check_file_path = tk.StringVar()
         check_file = ttk.Checkbutton(window, text='    Файл:', variable=file_value)
-        check_file.grid(row=7, column=0, sticky=tk.E, padx=pad_x, pady=pad_y)
+        check_file.grid(row=9, column=0, sticky=tk.E, padx=pad_x, pady=pad_y)
 
         check_file_label = ttk.Label(window,
                                      textvariable=check_file_path,
                                      background='white',
                                      relief=tk.GROOVE)
-        check_file_label.grid(row=7, column=1, columnspan=2, sticky=tk.EW, padx=pad_x, pady=pad_y, ipadx=2, ipady=2)
+        check_file_label.grid(row=9, column=1, columnspan=2, sticky=tk.EW, padx=pad_x, pady=pad_y, ipadx=2, ipady=2)
 
         ttk.Button(window, text='Обзор...', command=lambda: open_check_file()
-                   ).grid(row=8, column=2, sticky=tk.EW, padx=pad_x)
+                   ).grid(row=10, column=2, sticky=tk.EW, padx=pad_x)
 
         # Можно считать, что это невидимый разделитель между основной частью и завершающими кнопками
-        tk.Frame(window).grid(row=9, column=0, columnspan=3, pady=12)
+        tk.Frame(window).grid(row=11, column=0, columnspan=3, pady=12)
 
         ttk.Button(window, text="Подтвердить", command=lambda: create_fs()
-                   ).grid(row=10, column=0, padx=pad_x, pady=15, sticky=tk.W)
+                   ).grid(row=12, column=0, padx=pad_x, pady=15, sticky=tk.W)
         ttk.Button(window, text="Отмена", command=lambda: dismiss()
-                   ).grid(row=10, column=2, padx=pad_x, pady=15, sticky=tk.E)
+                   ).grid(row=12, column=2, padx=pad_x, pady=15, sticky=tk.E)
 
         window.grab_set()   # Говорим что это приоритетное окно
         # То есть пока его не закрыть к основному окну доступ не получить
@@ -239,24 +265,31 @@ class VisualElements:
                 showerror('Ошибка', 'Нельзя создавать шифрованную ФС без ключа!\nПожалуйста, создайте ключ')
                 return None
 
+            cipher = cipher_combobox.get()
+            self.cipher = 'kuznechik' if cipher == 'Кузнечик' else 'magma'
+            self.cipher_method = cipher_method_combobox.get()
+
             self.key = create_key(key_byte_string)              # Создание ключа шифрования
             self.sector_size = int(sector_size_entry.get())     # Запоминаем размер сектора
-            if self.sector_size < 512:
-                showerror('Слишком малый сектор', 'Пожалуйста, увеличьте размер сектора хотя бы до 512 байт')
+            if self.sector_size < 256:
+                showerror('Слишком малый сектор', 'Пожалуйста, увеличьте размер сектора хотя бы до 256 байт')
                 return None
             if self.sector_size > 65536:    # 65536, так как под него отведено всего 2 байта
                 showerror('Слишком большой сектор', 'Пожалуйста, уменьшите размер сектора хотя бы до 65536 байт')
                 return None
 
             # Создание заголовков файла
-            FirstSector(self.key, self.file_path, self.sector_size).create_new()
+            FirstSector(self.key, self.file_path, self.sector_size, self.cipher, self.cipher_method).create_new()
 
-            self.tree_sector = TableSector(self.key, self.file_path, 'tree', self.sector_size)
+            self.tree_sector = TableSector(self.key, self.file_path, 'tree',
+                                           self.sector_size, self.cipher, self.cipher_method)
             self.tree_sector.create_new_table()
             self.tree_dict = self.tree_sector.read_table()
 
-            TableSector(self.key, self.file_path, 'file', self.sector_size).create_new_table()
-            TableSector(self.key, self.file_path, 'free', self.sector_size).create_new_table()
+            TableSector(self.key, self.file_path, 'file',
+                        self.sector_size, self.cipher, self.cipher_method).create_new_table()
+            TableSector(self.key, self.file_path, 'free',
+                        self.sector_size, self.cipher, self.cipher_method).create_new_table()
 
             # Обновление визуала
             self.tree_visual(0)
@@ -388,15 +421,17 @@ class VisualElements:
 
             self.key = create_key(key_byte_string)      # Вычисление ключа шифрования
 
-            sector_0 = FirstSector(self.key, self.file_path)
-            head_key, self.sector_size = sector_0.read_sector()   # Чтение проверочного ключа и размера сектора из файла
+            sector_0 = FirstSector(self.key, self.file_path, 1024, self.cipher, self.cipher_method)
+            # Чтение проверочного ключа, размера секторов, шифра и метода шифрования из файла
+            head_key, self.sector_size, self.cipher, self.cipher_method = sector_0.read_sector()
 
             if head_key != bytes(gostcrypto.gosthash.new('streebog512', data=bytearray(self.key)).digest()):
                 showerror('Неправильный ключ', 'Введен неправильный ключ, попробуйте еще раз')
                 return None
 
             # Узнаем иерархию
-            self.tree_sector = TableSector(self.key, self.file_path, 'tree', self.sector_size)
+            self.tree_sector = TableSector(self.key, self.file_path, 'tree',
+                                           self.sector_size, self.cipher, self.cipher_method)
             self.tree_dict = self.tree_sector.read_table()
 
             # И обновляем визуал
@@ -474,8 +509,11 @@ class VisualElements:
         for i in range(self.columns):   # Устанавливаем всем столбцам в grid'е равноправие, чтоб ни один не был больше
             self.folders_frame.columnconfigure(i, weight=1)
 
-        child_nodes = self.tree_dict[str(current_folder_id)][1]     # Читаем дочерние узлы нашей папки
-        self.update_scrollbar(len(child_nodes))                     # При необходимости рисуем скроллбар
+        current_folder_id = str(current_folder_id)
+        child_nodes = copy.deepcopy(self.tree_dict[current_folder_id][1])     # Читаем дочерние узлы нашей папки
+        if current_folder_id != '0':
+            child_nodes.insert(0, self.tree_dict[current_folder_id][0])
+        self.update_scrollbar(len(child_nodes))                 # При необходимости рисуем скроллбар
 
         labels_in_frame = []    # Все элементы, отображаемые в правой части
 
@@ -499,7 +537,7 @@ class VisualElements:
             col = i % self.columns
 
             label = ttk.Label(master=self.folders_frame,
-                              text=self.tree_dict[str(child_nodes[i])][2],
+                              text='...' if i == 0 and current_folder_id != '0' else self.tree_dict[str(child_nodes[i])][2],
                               image=self.image_folder_maxi if self.tree_dict[str(child_nodes[i])][3] == 0 else self.image_file_maxi,
                               compound='top',
                               wraplength=self.maxi_ico_size,
@@ -535,9 +573,13 @@ class VisualElements:
         elif can_start_file:    # Если это файл, то запускаем его (если можем)
             progressbar = ttk.Progressbar(self.status_frame, orient=tk.HORIZONTAL, length=400)
             progressbar.pack(padx=10, pady=10, anchor=tk.E)
-            FileSector(self.key, self.file_path, self.sector_size
+
+            FileSector(self.key, self.file_path, self.sector_size, self.cipher, self.cipher_method
                        ).exec_file(self.tree_dict[node_id][4], progressbar, self.status_frame)
+
             progressbar.destroy()
+        else:   # Если нажали на файл в дереве, то открываем его родительскую папку
+            self.folder_visual(str(self.tree_dict[node_id][0]))         # Раскрываем папку в правой части
 
     def node_rename(self, event, node_id):
         """Переименование элемента"""
@@ -587,7 +629,8 @@ class VisualElements:
                 rec_delete(child_id)        # И вызываем удаление для них
 
             if self.tree_dict[node_id][3] == 1:     # Если удаляемый элемент - файл
-                FileSector(self.key, self.file_path, self.sector_size).delete_file(self.tree_dict[node_id][4])
+                FileSector(self.key, self.file_path, self.sector_size, self.cipher, self.cipher_method
+                           ).delete_file(self.tree_dict[node_id][4])
 
             del self.tree_dict[node_id]     # Удаление элемента из дерева
 
@@ -715,7 +758,7 @@ class VisualElements:
             progressbar.grid(row=0, column=1, padx=10, pady=10, sticky=tk.E)
 
             # Загружаем файл в таблицу файлов
-            file_id, file_name = FileSector(self.key, self.file_path, self.sector_size
+            file_id, file_name = FileSector(self.key, self.file_path, self.sector_size, self.cipher, self.cipher_method
                                             ).write_file(load_file_path, progressbar, self.status_frame)
 
             # И добавляем в таблицу дерева
@@ -751,7 +794,8 @@ class VisualElements:
             progressbar_total['maximum'] = float(num_files)
             self.status_frame.update()
 
-            file_sector = FileSector(self.key, self.file_path, self.sector_size)     # Открываем секторы файлов
+            file_sector = FileSector(self.key, self.file_path, self.sector_size,
+                                     self.cipher, self.cipher_method)     # Открываем секторы файлов
 
             iterator = -1   # Для общего прогрессбара
             parent_dict = {dir_root: str(parent_id), directory_path: new_id}        # К какой ветке приписать файл/папку
@@ -807,7 +851,7 @@ class VisualElements:
                     rec_nod_bypass(path + '\\' + node_name, child_node)
             else:                                           # Если элемент - файл
                 file_name, file_bytes = FileSector(         # То читаем файл
-                    self.key, self.file_path, self.sector_size
+                    self.key, self.file_path, self.sector_size, self.cipher, self.cipher_method
                 ).read_file(self.tree_dict[child_id][4], progressbar, self.status_frame)
 
                 with open(path + '\\' + file_name, 'wb') as f:      # И создаем его в папке
